@@ -1,0 +1,83 @@
+# Central hyperparameter file for the RLHF pipeline.
+# Loaded by every notebook so a single change here propagates everywhere.
+
+base_model: "Qwen/Qwen2.5-1.5B-Instruct"
+
+# Where the three notebooks write their artefacts.
+paths:
+  reward_model_dir: "outputs/reward_model"
+  ppo_policy_dir:   "outputs/ppo_policy"
+  eval_dir:         "outputs/eval"
+
+# Used for reproducibility (numpy, torch, transformers).
+seed: 42
+
+# Shared LoRA configuration (reward model + PPO policy).
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+  bias: "none"
+
+# QLoRA 4-bit quantization config (used when load_in_4bit is true).
+quantization:
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
+# === Reward model ============================================================
+reward_model:
+  dataset_name: "Anthropic/hh-rlhf"
+  num_train_samples: 10000
+  num_eval_samples: 500
+  max_length: 1024
+  per_device_train_batch_size: 2
+  gradient_accumulation_steps: 8
+  learning_rate: 5.0e-5
+  num_train_epochs: 1
+  warmup_ratio: 0.03
+  logging_steps: 25
+  eval_steps: 200
+  save_steps: 500
+
+# === PPO =====================================================================
+ppo:
+  prompt_dataset: "Anthropic/hh-rlhf"
+  num_prompts: 2000
+  max_prompt_length: 512
+  max_new_tokens: 128
+  learning_rate: 1.4e-5
+  batch_size: 4
+  mini_batch_size: 2
+  gradient_accumulation_steps: 4
+  ppo_epochs: 4
+  init_kl_coef: 0.2
+  adap_kl_ctrl: true
+  target_kl: 6.0
+  cliprange: 0.2
+  cliprange_value: 0.2
+  gamma: 1.0
+  lam: 0.95
+  total_episodes: 2
+
+# === Evaluation ==============================================================
+evaluation:
+  ethics_subsets:
+    - commonsense
+    - justice
+    - deontology
+    - virtue
+    - utilitarianism
+  samples_per_subset: 100
+  # Models to compare side-by-side: keys must match folder names in outputs/.
+  models:
+    baseline:
+      adapter_path: null            # plain base model
+    rlhf:
+      adapter_path: "outputs/ppo_policy"
