@@ -1,0 +1,11 @@
+--index-url https://download.pytorch.org/whl/cpu
+torch>=2.1.0
+--extra-index-url https://pypi.org/simple
+transformers>=4.45.0
+peft>=0.13.0
+accelerate>=0.34.0
+datasets>=3.0.0
+sentencepiece>=0.2.0
+pyyaml>=6.0
+tqdm>=4.66.0
+numpy>=1.26.0

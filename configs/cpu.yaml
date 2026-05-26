@@ -1,0 +1,65 @@
+# CPU smoke-test config. Uses a 0.5B model and tiny eval set so the pipeline
+# runs in minutes, not hours. Training is NOT realistic on CPU at this scale —
+# only the baseline eval / qualitative scripts make sense here.
+model:
+  name: "Qwen/Qwen2.5-0.5B-Instruct"
+  trust_remote_code: false
+  load_in_4bit: false
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "float32"
+  bnb_4bit_use_double_quant: false
+
+lora:
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - v_proj
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+data:
+  dataset_name: "PKU-Alignment/PKU-SafeRLHF"
+  config_name: null
+  train_split: "train"
+  eval_split: "test"
+  max_train_samples: 200
+  max_eval_samples: 50
+  max_prompt_length: 256
+  max_length: 512
+  filter_safety_disagreement: true
+
+dpo:
+  beta: 0.1
+  loss_type: "sigmoid"
+  label_smoothing: 0.0
+
+training:
+  output_dir: "./checkpoints/dpo_cpu"
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 4
+  learning_rate: 5.0e-6
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.1
+  weight_decay: 0.0
+  optim: "adamw_torch"
+  max_grad_norm: 1.0
+  bf16: false
+  fp16: false
+  gradient_checkpointing: false
+  logging_steps: 5
+  save_steps: 100
+  eval_steps: 50
+  save_total_limit: 1
+  report_to: "none"
+  seed: 42
+
+ethics:
+  categories:
+    - commonsense
+    - justice
+  samples_per_category: 20
+  seed: 42
