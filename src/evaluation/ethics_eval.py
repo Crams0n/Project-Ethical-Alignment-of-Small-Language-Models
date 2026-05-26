@@ -152,10 +152,11 @@ def load_causal_lm_for_eval(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
     model = AutoModelForCausalLM.from_pretrained(
         base_model_name,
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
+        torch_dtype=dtype,
+        device_map="auto" if torch.cuda.is_available() else None,
     )
     if adapter_path:
         from peft import PeftModel

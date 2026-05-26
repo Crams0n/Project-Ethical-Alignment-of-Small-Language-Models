@@ -77,12 +77,15 @@ def load_hh_rlhf_for_reward_model(
     return train, evalset
 
 
-def load_hh_rlhf_prompts_for_ppo(num_prompts: int = 2000, seed: int = 42) -> Dataset:
-    """Extract just the prompts from HH-RLHF for PPO rollouts.
+def load_hh_rlhf_prompts_for_rl(num_prompts: int = 2000, seed: int = 42) -> Dataset:
+    """Extract just the user prompts from HH-RLHF for online RL rollouts (RLOO / PPO).
 
-    PPO does not need preference labels — it only needs prompts to roll out generations
-    for. We reuse the same dataset so the policy is optimized on the same distribution
-    of human conversations the reward model was trained to score.
+    The RL trainer does not need preference labels — only prompts to roll out
+    generations for. We reuse the same dataset so the policy is optimized on the same
+    distribution of human conversations the reward model was trained to score.
+
+    The returned dataset has a single ``prompt`` column (the column name TRL 1.x
+    trainers expect for the prompt-only format).
     """
     ds = load_dataset("Anthropic/hh-rlhf", split="train")
     ds = ds.shuffle(seed=seed).select(range(min(num_prompts, len(ds))))
@@ -91,9 +94,9 @@ def load_hh_rlhf_prompts_for_ppo(num_prompts: int = 2000, seed: int = 42) -> Dat
         prompt, _, _ = _split_into_prompt_and_response(
             example["chosen"], example["rejected"]
         )
-        # We strip the trailing "Assistant:" marker so the policy itself produces the
-        # whole assistant turn, then keep just the last human turn as the user message
-        # (Qwen's chat template needs a clean user message, not the raw transcript).
+        # Strip the trailing "Assistant:" marker so the policy generates the assistant
+        # turn itself, then keep only the last human turn — Qwen's chat template
+        # expects a clean user message, not the raw HH-RLHF transcript.
         human_marker = "\n\nHuman:"
         assistant_marker = "\n\nAssistant:"
         end = prompt.rfind(assistant_marker)
@@ -102,8 +105,12 @@ def load_hh_rlhf_prompts_for_ppo(num_prompts: int = 2000, seed: int = 42) -> Dat
         start = prompt.rfind(human_marker)
         if start != -1:
             prompt = prompt[start + len(human_marker):].strip()
-        return {"query": prompt}
+        return {"prompt": prompt}
 
     ds = ds.map(_extract, remove_columns=ds.column_names)
-    ds = ds.filter(lambda r: len(r["query"]) > 0 and len(r["query"]) < 2000)
+    ds = ds.filter(lambda r: 0 < len(r["prompt"]) < 2000)
     return ds
+
+
+# Backwards-compatible alias (older notebook imports may reference the old name).
+load_hh_rlhf_prompts_for_ppo = load_hh_rlhf_prompts_for_rl
