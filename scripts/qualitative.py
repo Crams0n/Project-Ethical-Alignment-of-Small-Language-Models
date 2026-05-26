@@ -48,9 +48,14 @@ def generate(model, tokenizer, prompt: str, dev: str, max_new_tokens: int = 200)
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/dpo.yaml")
-    parser.add_argument("--adapter", required=True)
+    parser.add_argument(
+        "--adapter",
+        default=None,
+        help="Path to a DPO LoRA adapter. If omitted, only the baseline is generated.",
+    )
     parser.add_argument("--baseline-eval", default="results/baseline_eval.json")
     parser.add_argument("--n-disagreements", type=int, default=10)
+    parser.add_argument("--max-new-tokens", type=int, default=200)
     parser.add_argument("--out", default="results/qualitative.json")
     args = parser.parse_args()
 
@@ -83,40 +88,78 @@ def main():
     base = load_base_model(cfg["model"], for_training=False)
     baseline_gens = []
     for cat, p in tqdm(wrong_prompts, desc="baseline/ETHICS"):
-        baseline_gens.append({"category": cat, "prompt": p, "response": generate(base, tokenizer, p, dev)})
+        baseline_gens.append({
+            "category": cat,
+            "prompt": p,
+            "response": generate(base, tokenizer, p, dev, args.max_new_tokens),
+        })
     baseline_probes = []
     for p in tqdm(SAFETY_PROBES, desc="baseline/probes"):
-        baseline_probes.append({"prompt": p, "response": generate(base, tokenizer, p, dev)})
-
-    # Free baseline and load DPO model.
-    del base
-    import gc
-    gc.collect()
-    torch.cuda.empty_cache()
-
-    base = load_base_model(cfg["model"], for_training=False)
-    dpo = load_adapter(base, args.adapter)
-
-    dpo_gens = []
-    for entry in tqdm(baseline_gens, desc="dpo/ETHICS"):
-        dpo_gens.append({
-            "category": entry["category"],
-            "prompt": entry["prompt"],
-            "response": generate(dpo, tokenizer, entry["prompt"], dev),
+        baseline_probes.append({
+            "prompt": p,
+            "response": generate(base, tokenizer, p, dev, args.max_new_tokens),
         })
-    dpo_probes = []
-    for entry in tqdm(baseline_probes, desc="dpo/probes"):
-        dpo_probes.append({"prompt": entry["prompt"], "response": generate(dpo, tokenizer, entry["prompt"], dev)})
+
+    dpo_gens: list[dict] | None = None
+    dpo_probes: list[dict] | None = None
+    if args.adapter:
+        # Free baseline and load DPO model.
+        del base
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        base = load_base_model(cfg["model"], for_training=False)
+        dpo = load_adapter(base, args.adapter)
+
+        dpo_gens = []
+        for entry in tqdm(baseline_gens, desc="dpo/ETHICS"):
+            dpo_gens.append({
+                "category": entry["category"],
+                "prompt": entry["prompt"],
+                "response": generate(dpo, tokenizer, entry["prompt"], dev, args.max_new_tokens),
+            })
+        dpo_probes = []
+        for entry in tqdm(baseline_probes, desc="dpo/probes"):
+            dpo_probes.append({
+                "prompt": entry["prompt"],
+                "response": generate(dpo, tokenizer, entry["prompt"], dev, args.max_new_tokens),
+            })
+    else:
+        log.warning("No --adapter provided: baseline-only qualitative output.")
+
+    def _merge(b_rows, d_rows):
+        if d_rows is None:
+            return [{**b, "dpo": None} for b in b_rows]
+        return [{**b, "dpo": d["response"]} for b, d in zip(b_rows, d_rows)]
 
     save_json(
         {
+            "model": cfg["model"]["name"],
+            "adapter": args.adapter,
             "ethics_disagreements": [
-                {"category": b["category"], "prompt": b["prompt"], "baseline": b["response"], "dpo": d["response"]}
-                for b, d in zip(baseline_gens, dpo_gens)
+                {
+                    "category": b["category"],
+                    "prompt": b["prompt"],
+                    "baseline": b["response"],
+                    "dpo": (d["response"] if dpo_gens is not None else None),
+                }
+                for b, d in zip(baseline_gens, dpo_gens or baseline_gens)
+            ] if dpo_gens is not None else [
+                {"category": b["category"], "prompt": b["prompt"], "baseline": b["response"], "dpo": None}
+                for b in baseline_gens
             ],
             "safety_probes": [
-                {"prompt": b["prompt"], "baseline": b["response"], "dpo": d["response"]}
-                for b, d in zip(baseline_probes, dpo_probes)
+                {
+                    "prompt": b["prompt"],
+                    "baseline": b["response"],
+                    "dpo": (d["response"] if dpo_probes is not None else None),
+                }
+                for b, d in zip(baseline_probes, dpo_probes or baseline_probes)
+            ] if dpo_probes is not None else [
+                {"prompt": b["prompt"], "baseline": b["response"], "dpo": None}
+                for b in baseline_probes
             ],
         },
         args.out,
