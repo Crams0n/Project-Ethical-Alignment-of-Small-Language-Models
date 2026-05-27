@@ -81,11 +81,24 @@ def attach_lora(model: PreTrainedModel, lora_cfg: dict) -> PreTrainedModel:
         task_type=lora_cfg.get("task_type", "CAUSAL_LM"),
     )
     model = get_peft_model(model, peft_cfg)
+
+    # Force every trainable parameter to fp32. Qwen2.5 weights are stored in
+    # bfloat16, which PEFT can propagate into the LoRA adapters. Mixed-precision
+    # training with `fp16=True` then crashes because the GradScaler cannot
+    # unscale bf16 gradients on T4. Casting to fp32 keeps the LoRA weights and
+    # their gradients in a dtype the scaler can handle; bnb still computes the
+    # frozen base in float16 via `bnb_4bit_compute_dtype`.
+    cast_count = 0
+    for name, param in model.named_parameters():
+        if param.requires_grad and param.dtype not in (torch.float32, torch.float64):
+            param.data = param.data.to(torch.float32)
+            cast_count += 1
+
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
     log.info(
         f"LoRA attached: {trainable:,} trainable / {total:,} total "
-        f"({100 * trainable / total:.3f}%)"
+        f"({100 * trainable / total:.3f}%), {cast_count} params cast to fp32"
     )
     return model
 
