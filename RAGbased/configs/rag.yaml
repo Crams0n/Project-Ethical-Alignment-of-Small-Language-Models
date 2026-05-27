@@ -1,0 +1,32 @@
+# Main RAG-based-alignment config. GPU-friendly defaults (1.5B model in 4-bit).
+# Mirrors configs/dpo.yaml from the DPO part so the two are easy to compare.
+
+model:
+  name: "Qwen/Qwen2.5-1.5B-Instruct"
+  trust_remote_code: false
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
+corpus:
+  dir: "corpus"
+
+retrieval:
+  backend: "dense"                                    # "dense" | "bm25"
+  encoder_name: "sentence-transformers/all-MiniLM-L6-v2"
+  encoder_device: "cpu"                               # encoder on CPU is fine
+  index_dir: "indexes/dense_minilm"
+
+rag:
+  top_k: 5
+  template: "principles"                              # "principles" | "constitution" | "minimal"
+
+ethics:
+  categories:
+    - commonsense
+    - deontology
+    - justice
+    - virtue
+  samples_per_category: 100
+  seed: 42

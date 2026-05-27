@@ -1,0 +1,32 @@
+# Same as rag.yaml but with the BM25 lexical retriever — used as an ablation
+# baseline to show the value (or lack of it) of dense retrieval.
+
+model:
+  name: "Qwen/Qwen2.5-1.5B-Instruct"
+  trust_remote_code: false
+  load_in_4bit: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: true
+
+corpus:
+  dir: "corpus"
+
+retrieval:
+  backend: "bm25"
+  encoder_name: null
+  encoder_device: "cpu"
+  index_dir: "indexes/bm25"   # unused for bm25 but kept for output paths
+
+rag:
+  top_k: 5
+  template: "principles"
+
+ethics:
+  categories:
+    - commonsense
+    - deontology
+    - justice
+    - virtue
+  samples_per_category: 100
+  seed: 42
