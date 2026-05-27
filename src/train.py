@@ -1,6 +1,7 @@
 """DPO training entry point (called by scripts/train_dpo.py)."""
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 from trl import DPOConfig, DPOTrainer
@@ -10,6 +11,22 @@ from src.model import attach_lora, load_base_model, load_tokenizer
 from src.utils import get_logger, set_seed
 
 log = get_logger(__name__)
+
+
+def _filter_kwargs(cls, kwargs: dict) -> dict:
+    """Keep only kwargs supported by `cls.__init__` (silently drop the rest).
+
+    TRL renames/removes DPOConfig kwargs between minor versions (e.g.
+    `max_prompt_length` / `max_length` moved out of DPOConfig in some
+    releases). Filtering avoids hard-failing on a missing kwarg.
+    """
+    sig = inspect.signature(cls.__init__)
+    valid = {name for name in sig.parameters}
+    kept = {k: v for k, v in kwargs.items() if k in valid}
+    dropped = sorted(set(kwargs) - set(kept))
+    if dropped:
+        log.warning(f"{cls.__name__} dropped unsupported kwargs: {dropped}")
+    return kept
 
 
 def train_dpo(cfg: dict) -> str:
@@ -38,7 +55,7 @@ def train_dpo(cfg: dict) -> str:
     output_dir = cfg["training"]["output_dir"]
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    dpo_args = DPOConfig(
+    requested_kwargs = dict(
         output_dir=output_dir,
         num_train_epochs=cfg["training"]["num_train_epochs"],
         per_device_train_batch_size=cfg["training"]["per_device_train_batch_size"],
@@ -68,6 +85,7 @@ def train_dpo(cfg: dict) -> str:
         max_length=cfg["data"]["max_length"],
         remove_unused_columns=False,
     )
+    dpo_args = DPOConfig(**_filter_kwargs(DPOConfig, requested_kwargs))
 
     trainer = DPOTrainer(
         model=model,
