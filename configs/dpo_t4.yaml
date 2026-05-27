@@ -52,8 +52,14 @@ training:
   weight_decay: 0.0
   optim: "paged_adamw_8bit"
   max_grad_norm: 1.0
-  bf16: false                            # was true
-  fp16: true                             # was false
+  # AMP disabled: bnb_4bit_compute_dtype=float16 already handles mixed-precision
+  # for the frozen base. Enabling fp16 in TrainingArguments wraps the optimizer
+  # in a GradScaler that errors out with "BFloat16 not implemented for
+  # _amp_foreach_non_finite_check_and_unscale_cuda" on this stack (transformers
+  # 5.x + accelerate + bnb on T4). Running fp32 training of the tiny LoRA
+  # adapters costs ~zero throughput because the heavy matmul stays in bnb fp16.
+  bf16: false
+  fp16: false
   gradient_checkpointing: true
   logging_steps: 25
   save_steps: 500
