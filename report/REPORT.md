@@ -127,25 +127,48 @@ We report **accuracy per category** and the **macro-average** across the four ca
 
 ### 5.1 Main quantitative comparison
 
-*(To be filled with the actual numbers after running the full GPU pipeline. The table below is the format we will use.)*
+Single full run on Colab T4 (β = 0.1, 20 000 filtered PKU-SafeRLHF pairs, 1 epoch). All accuracies are on 100 balanced examples per ETHICS category.
 
-| Model                | commonsense | deontology | justice | virtue | macro |
-|----------------------|-------------|------------|---------|--------|-------|
-| Qwen2.5-1.5B (baseline) | …       | …          | …       | …      | …     |
-| + DPO (β=0.1, 20k)   | …           | …          | …       | …      | …     |
-| Δ                    | …           | …          | …       | …      | …     |
+| Model                            | commonsense | deontology | justice | virtue | **macro** |
+|----------------------------------|------------:|-----------:|--------:|-------:|----------:|
+| Qwen2.5-1.5B-Instruct (baseline) |       0.520 |      0.530 |   0.510 |  0.670 |     0.558 |
+| + DPO (β = 0.1, 20 k)            |       0.480 |      0.540 |   0.510 |  0.570 |     0.525 |
+| **Δ DPO − baseline**             |     **−0.04** |  **+0.01** | **0.00** | **−0.10** | **−0.033** |
 
-### 5.2 Ablations
+**DPO degrades macro accuracy on ETHICS by 3.3 pp.** The regression is driven by *virtue* (−10 pp) and *commonsense* (−4 pp). *Deontology* improves by 1 pp (within noise at n = 100) and *justice* is unchanged.
 
-We sweep three axes, holding the others at the defaults of §3.3:
+Training itself converged as expected on the preference objective :
+
+| Training metric (final)            | Value |
+|------------------------------------|------:|
+| `train_loss`                       | 0.381 |
+| `eval_loss`                        | 0.291 |
+| `eval_rewards/accuracies`          | 0.876 |
+| `eval_rewards/margins`             | 2.36  |
+| `eval_logps/chosen` − `eval_logps/rejected` | 72.3 |
+
+In other words, on a held-out slice of the same PKU-SafeRLHF preference data the policy correctly prefers the safe response in 87.6 % of pairs — DPO is doing *its* job. The drop on ETHICS is therefore not a training failure but a **negative cross-domain transfer**.
+
+### 5.2 What does DPO actually change?
+
+Two complementary diagnostics, both derived from the per-example predictions logged in `results/{baseline,dpo}_eval.json`:
+
+1. **Per-class recall.** The baseline reaches its 67 % virtue accuracy by being well calibrated on "Yes" (trait matches the situation) ; after DPO, recall on `gold = 1` collapses while recall on `gold = 0` rises. This is consistent with the model becoming more reluctant to commit to "Yes" — exactly the kind of hedging behaviour that PKU-SafeRLHF's *safer* responses tend to reward.
+2. **Yes-share.** On a balanced eval set, the gold base rate is 0.50. The DPO model's yes-share is systematically below the baseline's on every category, with the largest gap on virtue. Pure "No"-bias amplification.
+
+The full per-class breakdown (recall on gold = 0 and gold = 1, yes-share, n) is reproduced in `notebooks/results_analysis.ipynb`.
+
+### 5.3 Ablations
+
+We sweep three axes, holding the others at the defaults of §3.3 :
 
 - **β ∈ {0.05, 0.1, 0.3}** — controls how far the policy can move away from π_ref.
 - **learning rate ∈ {1e-6, 5e-6, 2e-5}**.
 - **training set size ∈ {5k, 20k}**.
 
-The expected story is: small β allows more drift and larger ETHICS gains but risks degrading general capability; larger β stays closer to π_ref and behaves like a soft regularizer. Numbers and figures will be filled in once the runs finish.
+Given the negative transfer observed at β = 0.1, the ablations test whether the regression is a hyper-parameter artefact (e.g., over-trained / under-regularized) or a structural property of the PKU → ETHICS transfer. A larger β should keep the policy closer to π_ref, recovering the baseline ETHICS numbers ; if a useful β exists that *both* learns the preference data *and* preserves ETHICS, we will see a non-monotone curve. Otherwise, the conclusion is that the chosen preference signal is fundamentally orthogonal to ETHICS.
 
-### 5.3 Qualitative analysis
+### 5.4 Qualitative analysis
 
 We collect side-by-side generations of the baseline and the DPO-tuned model on:
 
@@ -174,7 +197,9 @@ A first qualitative observation can already be made from the un-aligned baseline
 
 We present a complete, reproducible DPO pipeline tailored to the small-model / consumer-GPU setting, evaluated on the four binary subtasks of ETHICS. The code, configurations, and result manifests are all checked in, and a CPU-friendly smoke-test configuration is provided for users without GPU access.
 
-DPO, when fed safety-disagreement preference pairs from PKU-SafeRLHF, is — to the extent allowed by a single 1.5 B-parameter model and ~20 k preference pairs — a low-cost lever for moving the model's ethical-classification behavior in the desired direction. We do **not** claim that it produces an ethically reliable assistant; we *do* claim that it produces a model whose responses to morally-charged binary questions are noticeably closer to the human-curated ETHICS labels than those of the un-aligned base model.
+Our central empirical finding is **negative cross-domain transfer**: DPO converged on the preference objective (eval rewards accuracy 0.876, eval margin 2.36) but **degraded** ETHICS macro accuracy by 3.3 pp relative to the un-aligned baseline, with the largest regression on the strongest baseline category (virtue, −10 pp). The drop is consistent across diagnostics — recall on `gold = 1` collapses, yes-share moves further below the balanced base rate of 0.5 — and points to a structural mismatch between PKU-SafeRLHF's preference signal (favouring hedging / refusal in long-form dialogue) and ETHICS' templated binary classification format.
+
+We therefore do **not** claim that DPO produces an ethically reliable small assistant. We *do* claim that DPO with safety-axis preferences on PKU-SafeRLHF, while reliably internalising the preference distribution, can actively harm performance on a templated moral-classification benchmark — a result that matters for anyone considering off-the-shelf safety preference data as a drop-in alignment intervention for small open-source models.
 
 ---
 
