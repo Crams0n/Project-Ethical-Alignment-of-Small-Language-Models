@@ -6,7 +6,7 @@ from pathlib import Path
 
 from trl import DPOConfig, DPOTrainer
 
-from src.data import load_pku_dpo
+from src.data import load_ethics_dpo, load_pku_dpo
 from src.model import attach_lora, load_base_model, load_tokenizer
 from src.utils import get_logger, set_seed
 
@@ -36,21 +36,31 @@ def train_dpo(cfg: dict) -> str:
     model = load_base_model(cfg["model"], for_training=True)
     model = attach_lora(model, cfg["lora"])
 
-    train_ds = load_pku_dpo(
-        tokenizer=tokenizer,
-        split=cfg["data"]["train_split"],
-        max_samples=cfg["data"]["max_train_samples"],
-        seed=cfg["training"]["seed"],
-    )
-
-    eval_ds = None
-    if cfg["data"].get("eval_split"):
-        eval_ds = load_pku_dpo(
+    source = cfg["data"].get("source", "pku")
+    if source == "ethics_train":
+        train_ds = load_ethics_dpo(
             tokenizer=tokenizer,
-            split=cfg["data"]["eval_split"],
-            max_samples=cfg["data"]["max_eval_samples"],
+            categories=cfg["data"].get("ethics_categories",
+                ("commonsense", "deontology", "justice", "virtue")),
+            n_per_category=cfg["data"]["n_per_category"],
             seed=cfg["training"]["seed"],
         )
+        eval_ds = None  # ETHICS train: no held-out preference eval
+    else:
+        train_ds = load_pku_dpo(
+            tokenizer=tokenizer,
+            split=cfg["data"]["train_split"],
+            max_samples=cfg["data"]["max_train_samples"],
+            seed=cfg["training"]["seed"],
+        )
+        eval_ds = None
+        if cfg["data"].get("eval_split"):
+            eval_ds = load_pku_dpo(
+                tokenizer=tokenizer,
+                split=cfg["data"]["eval_split"],
+                max_samples=cfg["data"]["max_eval_samples"],
+                seed=cfg["training"]["seed"],
+            )
 
     output_dir = cfg["training"]["output_dir"]
     Path(output_dir).mkdir(parents=True, exist_ok=True)

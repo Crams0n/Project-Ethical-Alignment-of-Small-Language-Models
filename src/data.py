@@ -196,3 +196,63 @@ def iter_all_ethics(
     seed: int = 42,
 ) -> dict[str, list[EthicsExample]]:
     return {cat: load_ethics(cat, n_per_category, seed) for cat in categories}
+
+
+# ---------------------------------------------------------------------------
+# DPO preference pairs synthesized from ETHICS train
+# ---------------------------------------------------------------------------
+
+def load_ethics_dpo(
+    tokenizer,
+    categories: Iterable[str] = ("commonsense", "deontology", "justice", "virtue"),
+    n_per_category: int = 2000,
+    seed: int = 42,
+) -> Dataset:
+    """Build DPO triples from the ETHICS *train* split.
+
+    For each ETHICS train example we reuse the same yes/no prompt template as
+    in evaluation and set:
+        - chosen   = the gold answer ("Yes" if label == 1 else "No")
+        - rejected = the opposite
+
+    This produces preferences whose distribution exactly matches the test
+    template, removing the domain gap that limits PKU-SafeRLHF→ETHICS transfer.
+    Only the train split is used; ETHICS test stays untouched.
+    """
+    rows = []
+    for cat in categories:
+        if cat not in _FORMATTERS:
+            log.warning(f"Unknown ETHICS category '{cat}', skipping.")
+            continue
+
+        ds = load_dataset("hendrycks/ethics", cat, split="train")
+        log.info(f"ETHICS/{cat} train: {len(ds)} rows")
+
+        # Balance classes per category so the preference set is not skewed.
+        per_class = n_per_category // 2
+        ds_pos = ds.filter(lambda r: int(r["label"]) == 1).shuffle(seed=seed).select(
+            range(min(per_class, sum(int(r["label"]) == 1 for r in ds)))
+        )
+        ds_neg = ds.filter(lambda r: int(r["label"]) == 0).shuffle(seed=seed).select(
+            range(min(per_class, sum(int(r["label"]) == 0 for r in ds)))
+        )
+
+        formatter = _FORMATTERS[cat]
+        for row in list(ds_pos) + list(ds_neg):
+            prompt_text, gold = formatter(row)
+            chosen, rejected = ("Yes", "No") if gold == 1 else ("No", "Yes")
+            prompt_formatted = tokenizer.apply_chat_template(
+                [{"role": "user", "content": prompt_text}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            rows.append({
+                "prompt": prompt_formatted,
+                "chosen": chosen,
+                "rejected": rejected,
+                "category": cat,
+            })
+
+    ds = Dataset.from_list(rows).shuffle(seed=seed)
+    log.info(f"Built {len(ds)} ETHICS-train DPO preference pairs")
+    return ds
