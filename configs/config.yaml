@@ -74,7 +74,7 @@ evaluation:
     - deontology
     - virtue
     - utilitarianism
-  samples_per_subset: 50
+  samples_per_subset: 100  # brief : "around 100 example by type of ethic tested"
   # Models to compare side-by-side.
   models:
     baseline:
