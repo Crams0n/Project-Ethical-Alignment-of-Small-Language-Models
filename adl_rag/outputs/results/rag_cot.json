@@ -1,0 +1,35 @@
+{
+  "tag": "rag_cot",
+  "mode": "rag",
+  "backend": "hf::Qwen/Qwen2.5-1.5B-Instruct (float32)",
+  "config": {
+    "reasoning_mode": "cot",
+    "guidelines_in_user": true,
+    "family_routing": true,
+    "top_k": 4,
+    "ablate_home_family": false
+  },
+  "per_subset": {
+    "commonsense": {
+      "accuracy": 0.53,
+      "n": 100
+    },
+    "deontology": {
+      "accuracy": 0.54,
+      "n": 100
+    },
+    "justice": {
+      "accuracy": 0.46,
+      "n": 100
+    },
+    "virtue": {
+      "accuracy": 0.73,
+      "n": 100
+    },
+    "utilitarianism": {
+      "accuracy": 0.62,
+      "n": 100
+    }
+  },
+  "overall": 0.576
+}

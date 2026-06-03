@@ -1,0 +1,35 @@
+{
+  "tag": "baseline_cot",
+  "mode": "baseline",
+  "backend": "hf::Qwen/Qwen2.5-1.5B-Instruct (float32)",
+  "config": {
+    "reasoning_mode": "cot",
+    "guidelines_in_user": true,
+    "family_routing": true,
+    "top_k": 4,
+    "ablate_home_family": false
+  },
+  "per_subset": {
+    "commonsense": {
+      "accuracy": 0.51,
+      "n": 100
+    },
+    "deontology": {
+      "accuracy": 0.53,
+      "n": 100
+    },
+    "justice": {
+      "accuracy": 0.46,
+      "n": 100
+    },
+    "virtue": {
+      "accuracy": 0.76,
+      "n": 100
+    },
+    "utilitarianism": {
+      "accuracy": 0.56,
+      "n": 100
+    }
+  },
+  "overall": 0.564
+}
