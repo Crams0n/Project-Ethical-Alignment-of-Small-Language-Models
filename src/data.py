@@ -1,10 +1,14 @@
 """Data loaders for DPO training (PKU-SafeRLHF) and ETHICS evaluation."""
 from __future__ import annotations
 
+# IMPORTANT: import `datasets` before anything that pulls in `torch` (i.e.
+# before `src.utils`). The reverse order segfaults at startup on the Windows
+# / Python 3.11 / torch 2.6+cu124 / datasets 3.6 stack we use locally. The
+# crash is silent (no traceback, exit 139), so this ordering is load-bearing.
+from datasets import Dataset, load_dataset
+
 from dataclasses import dataclass
 from typing import Iterable
-
-from datasets import Dataset, load_dataset
 
 from src.utils import get_logger
 

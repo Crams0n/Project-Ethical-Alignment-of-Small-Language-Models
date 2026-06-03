@@ -1,0 +1,58 @@
+# Qualitative-only config: loads the base model in bf16 (no QLoRA) because
+# bitsandbytes 0.49 segfaults on Windows during model.generate() + 4-bit + PEFT.
+# 1.5B in bf16 = ~3 GB, fits in the RTX 4070 8 GB. Adapter is still loaded.
+model:
+  name: "Qwen/Qwen2.5-1.5B-Instruct"
+  trust_remote_code: false
+  load_in_4bit: false
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_compute_dtype: "bfloat16"
+  bnb_4bit_use_double_quant: false
+
+# Unused at qualitative time but required by the config schema
+lora:
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj]
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+data:
+  source: "ethics_train"
+  ethics_categories: [commonsense, deontology, justice, virtue]
+  n_per_category: 250
+  max_prompt_length: 256
+  max_length: 384
+
+dpo:
+  beta: 0.1
+  loss_type: "sigmoid"
+  label_smoothing: 0.0
+
+training:
+  output_dir: "./checkpoints/dpo_ethics"
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 8
+  learning_rate: 2.0e-5
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.1
+  weight_decay: 0.0
+  optim: "paged_adamw_8bit"
+  max_grad_norm: 1.0
+  bf16: true
+  fp16: false
+  gradient_checkpointing: true
+  logging_steps: 10
+  save_steps: 100
+  eval_steps: 100
+  save_total_limit: 2
+  report_to: "none"
+  seed: 42
+
+ethics:
+  categories: [commonsense, deontology, justice, virtue]
+  samples_per_category: 100
+  seed: 42
