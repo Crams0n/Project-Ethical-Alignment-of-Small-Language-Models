@@ -1,7 +1,0 @@
-__pycache__/
-*.pyc
-.venv/
-indexes/
-results/
-*.npy
-*.log
