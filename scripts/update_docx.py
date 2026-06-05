@@ -21,7 +21,7 @@ from docx.text.paragraph import Paragraph
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCX_PATH = ROOT / "Compte_rendu_ADL.docx"
-DOCX_BACKUP = ROOT / "Compte_rendu_ADL_original.docx"
+DOCX_BACKUP = ROOT / "versions_precedentes" / "Compte_rendu_ADL_original.docx"
 RESULTS = ROOT / "results"
 FIG_MACRO = RESULTS / "fig_dpo_macro.png"
 FIG_CATEGORIES = RESULTS / "fig_dpo_categories.png"

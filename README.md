@@ -1,198 +1,128 @@
-# DPO — Ethical Alignment de Petits LM (Projet ADL)
+# DPO — Alignement éthique de Qwen2.5-1.5B sur ETHICS
 
-Partie **DPO** du projet M1 ADL *Ethical Alignment of Small Language Models*.
-Cible : aligner un LLM 1–3B avec **Direct Preference Optimization** (Rafailov et al., NeurIPS 2023),
-puis évaluer sur **ETHICS** (Hendrycks et al., ICLR 2021).
+Volet DPO du projet M1 ADL *Ethical Alignment of Small Language Models*. Le code, les configs, les résultats et les figures de la **meilleure configuration** (run « max ») vivent à la racine. Les configurations intermédiaires et les artefacts produits pendant l'exploration sont archivés dans [`versions_precedentes/`](versions_precedentes/).
 
----
+## Résultat principal
 
-## 1. Choix de design
+| Modèle                              | macro ETHICS | commonsense | deontology | justice | virtue |
+|-------------------------------------|-------------:|------------:|-----------:|--------:|-------:|
+| Baseline Qwen2.5-1.5B-Instruct      |        0.540 |       0.500 |      0.520 |   0.510 |  0.630 |
+| **+ DPO (ETHICS-train, run "max")** |    **0.710** |   **0.630** |  **0.760** | **0.710** | **0.740** |
+| **Δ**                               |     **+17 pp** | +13 pp     | +24 pp     | +20 pp  | +11 pp |
 
-| Élément                  | Choix                                 | Justification                                                                                              |
-|--------------------------|---------------------------------------|------------------------------------------------------------------------------------------------------------|
-| Modèle de base           | `Qwen/Qwen2.5-1.5B-Instruct`          | Apache 2.0, chat template ChatML stable, base instruct correcte → marge DPO observable.                    |
-| Méthode d'entraînement   | DPO via TRL                           | Pas de reward model séparé, plus stable à petite échelle que PPO.                                          |
-| PEFT                     | QLoRA 4-bit (NF4 + double quant)      | Tient sur GPU grand public (≥ 8 Go VRAM).                                                                  |
-| Dataset DPO              | `PKU-Alignment/PKU-SafeRLHF`          | Pairs labellisées explicitement sur l'axe *safety* → signal éthique propre, plus aligné sur ETHICS que HH. |
-| Filtrage des paires      | Désaccord sur `is_response_X_safe`    | Élimine les paires où la préférence safety est ambiguë.                                                    |
-| Évaluation               | Log-likelihood `P("Yes") vs P("No")`  | Robuste pour 1.5B (génération libre trop bruitée à cette taille).                                          |
-| Catégories ETHICS        | commonsense, deontology, justice, virtue | Les 4 tâches binaires ; *utilitarianism* (ranking pairwise) gardée en option future.                    |
-| n par catégorie          | 100, équilibré 50/50                  | Conforme à la consigne (~100 ex/catégorie), réduit la variance d'évaluation.                               |
+Évalué sur ETHICS test, 100 exemples par sous-ensemble équilibrés 50/50, scoring log-likelihood Yes/No. Détail méthodologique : [`report/REPORT.md`](report/REPORT.md). Comparaison des six configurations explorées : [`notebooks/results_analysis.ipynb`](notebooks/results_analysis.ipynb).
 
-**Données synthétiques :** aucune dans la version par défaut.
-**LLMs externes utilisés :** aucun pour la génération de données (DPO sur PKU brut). Claude (cet assistant) est utilisé uniquement pour la scaffolding du code et la rédaction du rapport — pas pour générer des préférences.
-
----
-
-## 2. Structure du projet
+## Structure du dépôt
 
 ```
-prjgourru/
-├── configs/dpo.yaml          # tous les hyperparamètres
+.
+├── README.md                          ← vous êtes ici
+├── CLAUDE.md                          briefing projet (cadrage M1 ADL)
+├── Projet_ADL.pdf                     sujet original
+├── Compte_rendu_ADL.docx              rapport groupe (RAG + RLHF + DPO)
+├── report/REPORT.md                   rapport ACL draft, volet DPO uniquement
+├── configs/
+│   └── dpo_ethics_max.yaml            config de la meilleure run (LoRA r=16, β=0.05, 4000 paires)
 ├── src/
-│   ├── data.py               # loaders PKU-SafeRLHF + ETHICS
-│   ├── model.py              # base + QLoRA + chargement d'adaptateur
-│   ├── train.py              # boucle DPO (TRL DPOTrainer)
-│   ├── eval.py               # log-likelihood scoring sur ETHICS
-│   └── utils.py              # seed, IO, logging
+│   ├── data.py                        loaders PKU-SafeRLHF + ETHICS-train préférences
+│   ├── model.py                       chargement Qwen + QLoRA + adaptateur
+│   ├── train.py                       boucle DPO (TRL)
+│   ├── eval.py                        scoring log-prob Yes/No sur ETHICS
+│   └── utils.py                       seed, config YAML, truststore
 ├── scripts/
-│   ├── eval_baseline.py      # éval du modèle non-aligné
-│   ├── train_dpo.py          # entraînement DPO unique
-│   ├── eval_dpo.py           # éval d'un adaptateur DPO
-│   ├── run_ablations.py      # grille (β, lr, taille data)
-│   └── qualitative.py        # générations comparées baseline vs DPO
-├── results/                  # JSONs d'évaluation (gitignored)
-├── checkpoints/              # adaptateurs LoRA (gitignored)
-└── requirements.txt
+│   ├── eval_baseline.py               évalue Qwen2.5-1.5B sans DPO
+│   ├── train_dpo.py                   entraînement (lit configs/dpo_ethics_max.yaml)
+│   ├── eval_dpo.py                    évalue un adaptateur DPO sur ETHICS test
+│   ├── qualitative.py                 génère baseline vs DPO sur ETHICS échecs + safety probes
+│   ├── run_ablations.py               grille β/LR/data (non utilisée pour la run max)
+│   └── update_docx.py                 injecte le contenu DPO dans Compte_rendu_ADL.docx
+├── notebooks/
+│   ├── results_analysis.ipynb         tableau + figures des 6 runs, matrices de confusion, qualitatif
+│   └── report_figures.ipynb           génère les 3 figures embarquées dans le docx
+├── results/
+│   ├── baseline_eval_rtx.json         baseline 1.5B sans DPO
+│   ├── dpo_eval_ethics_max.json       éval ETHICS de la run max
+│   ├── qualitative_max.json           générations baseline vs DPO max
+│   └── fig_*.png                      figures (5 PNG : 2 du notebook + 3 du docx)
+├── logs/
+│   ├── 01_baseline_rtx.log            log du eval_baseline
+│   ├── 02_train_ethics_max.log        log du train_dpo (3h sur RTX 4070 Laptop)
+│   ├── 03_eval_dpo_ethics_max.log     log du eval_dpo
+│   └── 04_qualitative_max.log         log du qualitative.py
+├── requirements.txt                   deps GPU (bitsandbytes, cu121)
+├── requirements-cpu.txt               deps CPU fallback (smoke test sans GPU)
+└── versions_precedentes/              configs / résultats / logs / notebook / docx originaux
+    │                                  des 5 runs intermédiaires (PKU full, PKU step-200,
+    │                                  ETHICS v1, ETHICS v2, run v3 avortée, et la version
+    │                                  du compte-rendu avant injection DPO)
+    └── README.md                      détail run par run
 ```
 
----
+## Reproduire la run principale
 
-## 3. Installation
+### Pré-requis matériel
+- GPU NVIDIA avec ≥ 8 Go VRAM et architecture Ampere ou Ada (RTX 30/40+) pour bfloat16 natif. La run originale a tourné sur **RTX 4070 Laptop (8 Go)** en ~3 h. Sur T4 Colab (16 Go) il faut basculer en `fp16` (voir `versions_precedentes/configs/dpo_t4.yaml` pour le précédent qui fonctionnait).
+- Python 3.11.
 
+### Installation
 ```powershell
-# Python 3.10–3.11 recommandé
-.\.venv\Scripts\Activate.ps1
-pip install --upgrade pip
+.\.venv\Scripts\Activate.ps1     # ou source .venv/bin/activate sous Linux/Colab
 pip install -r requirements.txt
 ```
 
-**Windows + bitsandbytes :** depuis `0.43.0`, `bitsandbytes` fournit des wheels Windows officiels. Si l'import échoue (CUDA non détecté), exécute :
-```powershell
-pip install --force-reinstall bitsandbytes
-```
-En dernier recours, désactive QLoRA en passant `model.load_in_4bit: false` dans `configs/dpo.yaml` (il faudra alors plus de VRAM ou un modèle plus petit).
+Si `bitsandbytes` refuse de s'importer sous Windows, désactiver `model.load_in_4bit` dans la config (le modèle prendra ~3 Go au lieu de 1 Go en VRAM mais ça tient toujours sur la 4070).
 
-**Auth Hugging Face :**
-```powershell
-huggingface-cli login
-```
-Qwen2.5 et PKU-SafeRLHF sont publics ; ETHICS aussi.
-
----
-
-## 4. Pipeline complet
+### Pipeline complète
 
 ```powershell
-# 1. Baseline — pas d'entraînement, juste l'éval initiale
-python -m scripts.eval_baseline --config configs/dpo.yaml --out results/baseline_eval.json
+# 1. Baseline (Qwen2.5-1.5B sans DPO) — ~3 min
+python -m scripts.eval_baseline `
+    --config configs/dpo_ethics_max.yaml `
+    --out results/baseline_eval_rtx.json
 
-# 2. Entraînement DPO principal
-python -m scripts.train_dpo --config configs/dpo.yaml
+# 2. Training DPO sur ETHICS-train (4000 paires synthétiques) — ~3 h
+python -m scripts.train_dpo --config configs/dpo_ethics_max.yaml
 
-# 3. Évaluation du modèle DPO
+# 3. Évaluation de l'adaptateur DPO — ~3 min
 python -m scripts.eval_dpo `
-    --config configs/dpo.yaml `
-    --adapter checkpoints/dpo_default/final `
-    --out results/dpo_eval.json
+    --config configs/dpo_ethics_max.yaml `
+    --adapter checkpoints/dpo_ethics_max/final `
+    --out results/dpo_eval_ethics_max.json
 
-# 4. Analyse qualitative (générations cote à cote)
+# 4. Analyse qualitative (générations baseline vs DPO sur ETHICS échecs + safety probes) — ~5 min
 python -m scripts.qualitative `
-    --config configs/dpo.yaml `
-    --adapter checkpoints/dpo_default/final `
-    --out results/qualitative.json
-
-# 5. Ablations (β, LR, taille data) — long
-python -m scripts.run_ablations --config configs/dpo.yaml --out results/ablations.json
+    --config configs/dpo_ethics_max.yaml `
+    --adapter checkpoints/dpo_ethics_max/final `
+    --baseline-eval results/baseline_eval_rtx.json `
+    --out results/qualitative_max.json
 ```
 
----
+Les notebooks [`results_analysis.ipynb`](notebooks/results_analysis.ipynb) et [`report_figures.ipynb`](notebooks/report_figures.ipynb) consomment les JSON ci-dessus et régénèrent les figures.
 
-## 5. Méthodologie détaillée
+## Méthode en 5 lignes
 
-### 5.1 Construction des paires DPO
+1. **Base** : Qwen2.5-1.5B-Instruct quantifié en NF4 (QLoRA) + LoRA r=16 (q/k/v/o + MLP gate/up/down), ~12 M params trainables.
+2. **Préférences** : 4000 paires synthétisées depuis ETHICS *train* (`chosen` = label gold, `rejected` = label opposé). ETHICS *test* n'est jamais vu.
+3. **DPO** : β = 0.05, LR = 2e-5 (cosine, 10 % warmup), batch effectif 8 (per_device = 1 × grad_accum = 8), 500 pas optimizer, paged_adamw_8bit, bf16 natif sur Ada.
+4. **Politique de référence** : le même modèle avec adaptateur LoRA désactivé (`ref_model=None` dans TRL DPOTrainer) — un seul jeu de poids résident en VRAM.
+5. **Évaluation** : log-likelihood des tokens "Yes" / "No" sous le chat template Qwen, argmax. 100 exemples par sous-ensemble (commonsense, deontology, justice, virtue), équilibrés 50/50.
 
-PKU-SafeRLHF fournit pour chaque prompt deux réponses `response_0`, `response_1` et plusieurs labels. On utilise :
+## Mettre à jour le compte-rendu .docx
 
-- `safer_response_id` ∈ {0, 1} pour orienter la paire sur l'axe **safety**, *pas* `better_response_id` (qui mélange helpfulness et safety) ;
-- on **filtre** sur `is_response_0_safe ≠ is_response_1_safe` pour ne garder que les paires avec un contraste de sûreté clair.
-
-Le prompt est ensuite formaté avec le chat template Qwen (ChatML) avant d'être passé à `DPOTrainer`.
-
-### 5.2 Objectif DPO
-
-Notation : `π_θ` = policy en cours d'entraînement, `π_ref` = policy de référence (le modèle de base figé). DPO optimise :
-
-```
-L_DPO(θ) = -E[ log σ ( β · ( log π_θ(y_w|x)/π_ref(y_w|x) - log π_θ(y_l|x)/π_ref(y_l|x) ) ) ]
+```powershell
+python scripts/update_docx.py
 ```
 
-où `y_w` = chosen (réponse safe), `y_l` = rejected. Avec PEFT, la policy de référence est obtenue gratuitement en désactivant les adaptateurs LoRA — pas besoin de charger un deuxième modèle en mémoire.
+Restaure `Compte_rendu_ADL.docx` depuis la version originale (sauvegardée dans `versions_precedentes/Compte_rendu_ADL_original.docx`), réinjecte les 6 sections DPO + la ligne du tableau + la nouvelle sous-section §4.1.b + les 3 figures. Idempotent.
 
-### 5.3 Évaluation ETHICS
+## Pour reproduire une run précédente
 
-Pour chaque exemple binaire, on construit un prompt yes/no et on calcule, sous le chat template :
+Les configs et résultats des 5 runs intermédiaires sont dans [`versions_precedentes/`](versions_precedentes/). Voir [`versions_precedentes/README.md`](versions_precedentes/README.md) pour la commande exacte à lancer (les chemins de config et d'output sont différents).
 
-```
-logP(answer = "Yes" | prompt)   et   logP(answer = "No" | prompt)
-```
+## Références
 
-en sommant les log-probabilités au niveau token. Prédiction = `argmax`. Acc = #correct / N.
-
-Mapping des labels :
-
-| Catégorie    | label 1 ↔ réponse "Yes" attendue                            |
-|--------------|--------------------------------------------------------------|
-| commonsense  | l'action est moralement *wrong*                              |
-| deontology   | l'excuse est *reasonable*                                    |
-| justice      | la revendication est *reasonable*                            |
-| virtue       | le trait *correspond* à la situation                         |
-
-### 5.4 Ablations prévues
-
-Trois axes, à exécuter selon le budget GPU :
-
-- **β ∈ {0.05, 0.1, 0.3}** — contrôle la régularisation KL vs `π_ref`. β petit = plus de drift.
-- **learning rate ∈ {1e-6, 5e-6, 2e-5}** — sensibilité usuelle DPO.
-- **taille du training set ∈ {5k, 20k}** — diminishing returns ?
-
-Pour rester dans un budget raisonnable (~3 GPU-h sur un seul GPU 12 Go) on fixe deux axes et on varie un seul.
-
----
-
-## 6. Métriques rapportées dans le rapport
-
-Pour chaque modèle (baseline + chaque run DPO) :
-
-- accuracy par catégorie ETHICS,
-- macro-moyenne sur les 4 catégories,
-- delta vs baseline,
-- 10 générations qualitatives sur les exemples où le baseline échoue,
-- 5 générations sur les *safety probes* de `scripts/qualitative.py`.
-
-Tableaux et figures (matplotlib) à générer à partir des JSON dans `results/`.
-
----
-
-## 7. Limites connues à discuter dans la section "Limites"
-
-1. **Évaluation par log-likelihood ≠ déploiement réel** : un modèle peut bien classifier "Yes/No" sans pour autant générer des réponses sûres. La section qualitative compense partiellement.
-2. **Train/test domain gap** : PKU-SafeRLHF = dialogue, ETHICS = scénarios courts. Le transfer est partiel.
-3. **Petite taille du modèle (1.5B)** : performances absolues modestes ; les conclusions portent sur le *delta* baseline → DPO, pas sur l'alignement absolu.
-4. **n = 100 / catégorie** : intervalle de confiance ~±10 points à 80% acc. À rapporter dans le tableau.
-5. **PKU-SafeRLHF est lui-même biaisé** (annotateurs, distribution de prompts) — héritage de biais à mentionner.
-
----
-
-## 8. Pour le rapport ACL 8 pages
-
-Plan suggéré :
-
-1. **Intro & motivation** (¾ page) — pourquoi aligner les petits LM, focus DPO.
-2. **Background** (1 page) — DPO formel, ETHICS.
-3. **Méthode** (1.5 pages) — choix de PKU + filtrage, QLoRA, prompt format ETHICS.
-4. **Setup expérimental** (1 page) — modèle, hyperparams, hardware.
-5. **Résultats quantitatifs** (1.5 pages) — tableau baseline vs DPO, courbe d'ablation β.
-6. **Résultats qualitatifs** (1 page) — 3–4 exemples commentés.
-7. **Limites & éthique** (½ page) — cf. section 7.
-8. **Conclusion** (¼ page).
-
----
-
-## 9. Référencement
-
-- Rafailov et al., *Direct Preference Optimization*, NeurIPS 2023.
-- Hendrycks et al., *Aligning AI With Shared Human Values*, ICLR 2021.
-- Ji et al., *PKU-SafeRLHF*, NeurIPS 2024.
-- Hu et al., *LoRA*, ICLR 2022.
-- Dettmers et al., *QLoRA*, NeurIPS 2023.
+- Rafailov et al., *Direct Preference Optimization*, NeurIPS 2023
+- Hendrycks et al., *Aligning AI With Shared Human Values*, ICLR 2021
+- Ji et al., *PKU-SafeRLHF*, NeurIPS Datasets & Benchmarks 2024
+- Dettmers et al., *QLoRA: Efficient Finetuning of Quantized LLMs*, NeurIPS 2023
+- Hu et al., *LoRA: Low-Rank Adaptation of Large Language Models*, ICLR 2022
